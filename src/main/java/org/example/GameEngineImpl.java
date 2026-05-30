@@ -2,6 +2,7 @@ package org.example;
 
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -15,6 +16,7 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
     Map<String, String[][]> boards = new ConcurrentHashMap<>();
     Map<String, List<String>> matchesPlayers = new ConcurrentHashMap<>();
     private final Map<String, List<GameClientListener>> clientListeners = new ConcurrentHashMap<>();
+    private final Map<String, String> activeTurns = new ConcurrentHashMap<>();
 
     protected GameEngineImpl() throws RemoteException {
         super();
@@ -39,37 +41,38 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
 
     @Override
     public void joinGame(Message msg, GameClientListener gameClientListener) throws RemoteException {
-        String match = msg.matchName();
+        String match = msg.getMatchName();
+
+        // If the game doesn't exist yet create it
+        if (!boards.containsKey(match)) {
+            initGame(match);
+        }
 
         if (!matchesPlayers.containsKey(match)) {
             throw new RemoteException("Match doesn't exists!");
         }
 
         List<String> players = matchesPlayers.get(match);
-        if (players.size() > 2) {
+        if (players.size() >= 2) {
             throw new RemoteException("Game is full!");
         }
 
-        players.add(msg.userName());
+        players.add(msg.getUsername());
         clientListeners.get(match).add(gameClientListener);
 
 
         //If there are 2 players, start the game
         if (players.size() == 2) {
+            String player1 = players.get(0);
+            String player2 = players.get(1);
+
+            // Player 1 (Index 0) always starts as 'X'
+            activeTurns.put(match, player1);
+            System.out.println("[Server] Match '" + match + "' started! First turn: " + player1);
             for (GameClientListener client : clientListeners.get(match)) {
                 client.notifyGameStarted();
             }
         }
-    }
-
-    @Override
-    public void startGame() throws RemoteException {
-
-    }
-
-    @Override
-    public void endGame() throws RemoteException {
-
     }
 
     @Override
@@ -81,36 +84,59 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
 
         synchronized (board) {
             List<String> players = matchesPlayers.get(match);
-            if (players.size() < 2) {
+            if (players == null || players.size() < 2) {
                 throw new RemoteException("Waiting for oponent!");
             }
 
-            String symbol = matchesPlayers.get(match).indexOf(player) % 2 == 0 ? "X" : "O";
-            String cell = board[y][x];
-
-            if (Objects.equals(cell, "O") || Objects.equals(cell, "X")) {
-                throw new RemoteException("Cell already occupied");
+            String currentTurnPlayer = activeTurns.get(match);
+            if (!Objects.equals(currentTurnPlayer, player)) {
+                throw new RemoteException("It is not your turn!");
             }
 
-            boards.get(match)[y][x] = symbol;
+            //Determine Symbol (Player 1 = X, Player 2 = O)
+            String symbol = players.indexOf(player) % 2 == 0 ? "X" : "O";
 
-            for (GameClientListener client : clientListeners.get(match)) {
-                client.notifyMoveMade(player, x, y);
+            if (x < 0 || x > 2 || y < 0 || y > 2) {
+                throw new RemoteException("Coordinates out of bounds.");
+            }
+            if (!Objects.equals(board[y][x], ".")) {
+                throw new RemoteException("Cell is already occupied.");
+            }
+
+            board[y][x] = symbol;
+
+            List<GameClientListener> currentListeners = new ArrayList<>(clientListeners.get(match));
+            for (GameClientListener listener : currentListeners) {
+                listener.notifyMoveMade(player, symbol, x, y);
             }
 
             //Check if player won
             if (checkWinner(symbol, match)) {
-                for (GameClientListener client : clientListeners.get(match)) {
-                    client.notifyGameOver(player);
+                for (GameClientListener client : currentListeners) {
+                    try {
+                        client.notifyGameOver(player);
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
                 }
                 cleanBoard(match);
+                return;
                 
-            } else if (isBoardFull(board)) {
-                for (GameClientListener client : clientListeners.get(match)) {
-                    client.notifyGameOver("Draw");
+            }
+            if (isBoardFull(board)) {
+                for (GameClientListener client : currentListeners) {
+                    try {
+                        client.notifyGameOver("Draw");
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
                 }
                 cleanBoard(match);
+                return;
             }
+
+            String opponent = players.get(0).equals(player) ? players.get(1) : players.get(0);
+            activeTurns.put(match, opponent);
         }
 
 
@@ -126,7 +152,6 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
     }
 
     private boolean checkWinner(String symbol, String match) throws RemoteException {
-        boolean isWinner = false;
 
         //Check cols
         for (int c = 0; c < 3; c++) {
@@ -134,7 +159,7 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
                     Objects.equals(boards.get(match)[0][c], boards.get(match)[1][c]) &&
                     Objects.equals(boards.get(match)[1][c], boards.get(match)[2][c]))
             {
-                isWinner = true;
+                return true;
             }
         }
 
@@ -145,7 +170,7 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
                     Objects.equals(boards.get(match)[r][0], boards.get(match)[r][1]) &&
                     Objects.equals(boards.get(match)[r][1], boards.get(match)[r][2]))
             {
-               isWinner = true;
+               return true;
             }
         }
 
@@ -153,21 +178,23 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
         if (!Objects.equals(boards.get(match)[0][0], ".") &&
                 Objects.equals(boards.get(match)[0][0], boards.get(match)[1][1]) &&
                 Objects.equals(boards.get(match)[1][1], boards.get(match)[2][2])) {
-            isWinner = true;
+            return true;
         }
 
         if (!Objects.equals(boards.get(match)[0][2], ".") &&
                 Objects.equals(boards.get(match)[0][2], boards.get(match)[1][1]) &&
                 Objects.equals(boards.get(match)[1][1], boards.get(match)[2][0])) {
-            isWinner = true;
+            return true;
         }
 
-        return isWinner;
+        return false;
     }
 
     private void cleanBoard(String match) {
+        this.activeTurns.remove(match);
         this.matchesPlayers.remove(match);
         this.clientListeners.remove(match);
         this.boards.remove(match);
+        System.out.println("[Server] Match '" + match + "' cleared from memory.");
     }
 }
