@@ -170,7 +170,7 @@ public class GameController extends Application {
 
     public void showGameOverState(String finalMessage) {
         boardStatusLabel.setText(finalMessage);
-        for (int y = 0; y < 3; rTearDown(y)) {
+        for (int y = 0; y < 3; y++) {
             for (int x = 0; x < 3; x++) {
                 buttons[y][x].setDisable(true);
             }

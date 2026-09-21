@@ -85,7 +85,7 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
         synchronized (board) {
             List<String> players = matchesPlayers.get(match);
             if (players == null || players.size() < 2) {
-                throw new RemoteException("Waiting for oponent!");
+                throw new RemoteException("Waiting for opponent!");
             }
 
             String currentTurnPlayer = activeTurns.get(match);
@@ -111,7 +111,7 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
             }
 
             //Check if player won
-            if (checkWinner(symbol, match)) {
+            if (checkWinner(match)) {
                 for (GameClientListener client : currentListeners) {
                     try {
                         client.notifyGameOver(player);
@@ -151,7 +151,7 @@ public class GameEngineImpl extends UnicastRemoteObject implements GameEngine {
         return true;
     }
 
-    private boolean checkWinner(String symbol, String match) throws RemoteException {
+    private boolean checkWinner(String match) throws RemoteException {
 
         //Check cols
         for (int c = 0; c < 3; c++) {
