@@ -75,40 +75,63 @@ public class GameController extends Application {
         Label feedbackLabel = new Label("");
         feedbackLabel.setStyle("-fx-text-fill: red; -fx-font-size: 13px;");
 
-        Button actionButton = new Button("Connect & Join Match");
-        actionButton.setMinWidth(250);
-        actionButton.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+        // Two separate actions: create a new match, or join an existing one
+        Button createButton = new Button("Create Match");
+        createButton.setMinWidth(250);
+        createButton.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
 
-        actionButton.setOnAction(e -> {
-            String user = usernameField.getText().trim();
-            String match = matchField.getText().trim();
+        Button joinButton = new Button("Join Match");
+        joinButton.setMinWidth(250);
+        joinButton.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
 
-            if (user.isEmpty() || match.isEmpty()) {
-                feedbackLabel.setText("Both fields are required!");
-                return;
-            }
+        createButton.setOnAction(e -> enterMatch(true, usernameField, matchField, feedbackLabel));
+        joinButton.setOnAction(e -> enterMatch(false, usernameField, matchField, feedbackLabel));
 
-            try {
-                this.username = user;
-                this.matchName = match;
+        layout.getChildren().addAll(titleLabel, usernameField, matchField, createButton, joinButton, feedbackLabel);
 
-                // Attempt to register with the server
-                Message msg = new Message(matchName, username);
-                server.joinGame(msg, this.listener);
-
-                // Transition to the Game Board Screen if successful
-                showBoardScreen();
-
-            } catch (Exception ex) {
-                feedbackLabel.setText(ex.getMessage());
-            }
-        });
-
-        layout.getChildren().addAll(titleLabel, usernameField, matchField, actionButton, feedbackLabel);
-
-        Scene scene = new Scene(layout, 350, 300);
+        Scene scene = new Scene(layout, 350, 340);
         primaryStage.setScene(scene);
         primaryStage.show();
+    }
+
+    /**
+     * Creates (create = true) or joins (create = false) the match typed in the lobby.
+     */
+    private void enterMatch(boolean create, TextField usernameField, TextField matchField, Label feedbackLabel) {
+        String user = usernameField.getText().trim();
+        String match = matchField.getText().trim();
+
+        if (user.isEmpty() || match.isEmpty()) {
+            feedbackLabel.setText("Both fields are required!");
+            return;
+        }
+
+        try {
+            this.username = user;
+            this.matchName = match;
+
+            Message msg = new Message(matchName, username);
+            if (create) {
+                server.createGame(msg, this.listener);
+            } else {
+                server.joinGame(msg, this.listener);
+            }
+
+            // Transition to the Game Board Screen if successful
+            showBoardScreen();
+
+        } catch (Exception ex) {
+            feedbackLabel.setText(errorMessage(ex));
+        }
+    }
+
+    /**
+     * An exception thrown by the server arrives wrapped in a ServerException,
+     * whose message also contains RMI details: show only the server's message.
+     */
+    private static String errorMessage(Exception ex) {
+        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+        return cause.getMessage();
     }
 
     /**
@@ -123,7 +146,7 @@ public class GameController extends Application {
         gridPane.setHgap(10);
         gridPane.setVgap(10);
 
-        boardStatusLabel = new Label("Joined match: " + matchName + ". Waiting for opponent...");
+        boardStatusLabel = new Label("Match: " + matchName + ". Waiting for opponent...");
         boardStatusLabel.setStyle("-fx-font-size: 15px; -fx-padding: 10px; -fx-font-weight: bold;");
         root.setBottom(boardStatusLabel);
         BorderPane.setAlignment(boardStatusLabel, Pos.CENTER);
@@ -155,7 +178,7 @@ public class GameController extends Application {
             boardStatusLabel.setText("Processing move...");
             server.makeMove(matchName, username, x, y);
         } catch (Exception e) {
-            boardStatusLabel.setText("Error: " + e.getMessage());
+            boardStatusLabel.setText("Error: " + errorMessage(e));
         }
     }
 
