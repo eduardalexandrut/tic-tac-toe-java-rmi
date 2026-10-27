@@ -29,7 +29,6 @@ public class Match {
     private String currentTurn;
     private boolean over = false;
 
-    // Single thread that delivers the callbacks of this match, in order.
     private final ExecutorService notifier = Executors.newSingleThreadExecutor();
 
     // Called once when the match ends, so the engine can forget it.
@@ -97,8 +96,6 @@ public class Match {
         String symbol = players.indexOf(player) == 0 ? "X" : "O";
         board[y][x] = symbol;
 
-        // The whole state change below happens before anybody is notified,
-        // so a client failure can never leave the match half-updated.
         broadcast(l -> l.notifyMoveMade(player, symbol, x, y));
 
         if (checkWinner()) {
@@ -113,11 +110,10 @@ public class Match {
         currentTurn = players.get(0).equals(player) ? players.get(1) : players.get(0);
     }
 
-    // Called (with the lock held) when the game ends normally.
     private void finish(String winner) {
         over = true;
         broadcast(l -> l.notifyGameOver(winner));
-        notifier.shutdown(); // callbacks already queued are still delivered
+        notifier.shutdown();
         System.out.println("[Server] Match '" + name + "' finished. Winner: " + winner);
         onFinished.run();
     }
@@ -149,9 +145,6 @@ public class Match {
         onFinished.run();
     }
 
-    // Queues a callback for all the listeners of this match.
-    // The list is copied while the lock is held; the remote calls run later
-    // on the notifier thread, without the lock.
     private void broadcast(Callback callback) {
         List<GameClientListener> targets = new ArrayList<>(listeners);
         notifier.execute(() -> {
